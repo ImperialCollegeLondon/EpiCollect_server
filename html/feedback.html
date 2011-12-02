@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}EpiCollect Server - {{project.name}} Feedback {% endblock %}
+
+{% block script %}
+<link rel="stylesheet" type="text/css" href="../static/map/ext-all.css" />
+<script type="text/javascript" src="../static/map/ext-base.js"></script>
+<script type="text/javascript" src="../static/map/ext-all.js"></script>
+<script type="text/javascript">
+Ext.onReady(function(){
+	{% if messages %}var data = [
+	{% for msg in messages %}['{{msg.key}}','{{msg.sender}}', '{{msg.subject}}', "{{msg.message|escape|linebreaksbr}}", '{{msg.feedbackType}}']
+	{% if forloop.last %}
+    ];
+	
+
+   var store = new Ext.data.ArrayStore({
+        fields: [
+           {name: 'key'},           
+           {name: 'sender'},
+           {name: 'subject'},
+           {name: 'message'},
+           {name: 'feedbackType'}
+        ]   	    
+   });
+  
+   store.loadData(data);
+
+   var grid = new Ext.grid.GridPanel({
+	   margins : {
+			top : 5,
+			left : 5,
+			bottom : 5,
+			right:5
+		},
+       store: store,
+       tbar:{
+		       items:[
+		        {
+			        text:'Read message',
+			        id:'read'
+			    },
+			    {
+					text:'Reply to Message',
+					id:'reply'
+			    },
+			    {
+					text:'Mark as read',
+					id:'mark'
+			    }
+			   ]
+		},
+       columns: [
+			{id:'key', header:'Key', sortable: true, dataIndex: 'key', hidden:true},
+           	{id:'Sender', header:'Sender', sortable: true, dataIndex: 'sender'},
+           	{header:'Subject', sortable: true, dataIndex: 'subject'},
+           	{header: 'Feedback Type', sortable: true,dataIndex:'feedbackType'},
+           	{id:'message', header: 'Message', sortable: true, dataIndex: 'message'}
+       ],
+       stripeRows: true,
+       autoExpandColumn: 'message',
+       height: 350,
+       width: 950,
+       title: 'Messages',
+       stateful: false,
+       stateId: 'grid'        
+   });
+  
+   grid.render('dataGrid');
+
+   function markRead()
+   {
+		Ext.Ajax.request({
+			url:'/markMessage',
+			params:{ 'msgKey' : getMsg().data["key"] },
+			success: function()
+			{
+				location.reload();	
+			}
+		});
+   }
+
+   function read()
+   {
+	   var msg = getMsg().data;
+	   Ext.MessageBox.alert('Message from ' + msg["sender"] + ' Subject : ' + msg['subject'], msg['message']);
+   }
+
+   function reply()
+   {
+	   var msg = getMsg().data;
+	   location.assign('mailto:' + msg["sender"]);
+	   markRead();
+   }
+
+	function getMsg()
+	{
+		return grid.getSelectionModel().getSelected();
+	}
+
+	grid.getTopToolbar().get('read').on('click', read, this);
+	grid.getTopToolbar().get('reply').on('click', reply, this);
+	grid.getTopToolbar().get('mark').on('click', markRead, this);
+   
+   {%else%},{%endif%}
+   {%endfor%}
+   {%endif%}
+   
+	
+});
+</script>
+{% endblock %}
+
+{% block content %}
+	
+    
+    <div id="dataGrid">{% if not messages %}<i>No entries</i>{% endif %}</div>
+    <div id="imagePanel" style="float:left"></div>
+    <div id="downloadPanel" style="float:right"></div>
+{% endblock%}

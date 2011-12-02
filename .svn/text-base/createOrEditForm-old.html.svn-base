@@ -1,0 +1,905 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <link type="text/css" rel="stylesheet" href="/stylesheets/main.css" />
+    <title>EpiCollect Form Builder</title>
+
+    <META HTTP-EQUIV="Pragma" CONTENT="no-cache">
+	<script type="text/javascript" src="/static/jquery-1.3.2.min.js"></script>
+	<script type="text/javascript" src="/static/jquery-ui-1.7.2.min.js"></script>
+    <style type="text/css">
+        .columns:after {
+            content: ".";
+            display: block;
+            height: 0;
+            clear: both;
+            visibility: hidden;
+        }
+        * html .columns {height: 1%;}
+        .columns{ display:inline-block; }
+        .columns{ display:block; }
+        .columns .column{
+          float:left;
+          display:inline;
+          min-height:360px;
+        }
+        .columns .last{ float:right; }
+        .columns .first{ width:180px; background-color:#ffeeee; }
+        .columns .second{ width:280px; margin-left:10px; background-color:#eeffee; }
+        .columns .last{ width:210px; background-color:#eeeeff}
+
+        .footers{ display:inline-block; }
+        .footers{ display:block; }
+        .footers .footer{
+          float:left;
+          display:inline;
+        }
+        .footers .last{ float:right; }
+        .footers .first{ width:180px; background-color:#eeeeee; }
+        .footers .second{ width:280px; margin-left:10px; background-color:#eeeeee; }
+        .footers .last{ width:210px; background-color:#eeeeee}
+
+        .formLine { margin-top: 10px; }
+        .formLineEdit { text-align: right; }
+        .optionLabel { float:left; text-align: left; }
+        .label { font-weight: bold; vertical-align: text-top; }
+        .formInput { text-align: right; vertical-align: text-top; }
+        .editHeader { text-align: right; }
+        .selectOption { text-align: right; }
+        #error { text-align: center; color: #ff0000; }
+        #success { text-align: center; color: #00ff00; }
+        #listForms { float: left; text-align: left; }
+        #projectHome { display:inline, float: left; text-align: left; }
+        #viewHelp { display:inline, float: right; text-align: right; }
+        #contextHelp { text-align: center; }
+        #inputOptions { text-align: right; }
+        #detailHeader { text-align: right; }
+        #formName {background-color: #eeeeee; }
+        #formVersionNumber {background-color: #eeeeee; }
+        #formSubmitButton {text-align:right; background-color: #eeeeee; }
+        #chartType { font-size: 80%; }
+    </style>
+
+    <script>
+        function getRequestParameter ( parameterName ) {
+            var queryString = window.location.search.substring(1);
+            var parameterName = parameterName + "=";
+            if ( queryString.length > 0 ) {
+                begin = queryString.indexOf ( parameterName );
+                if ( begin != -1 ) {
+                    begin += parameterName.length;
+                    end = queryString.indexOf ( "&" , begin );
+                    if ( end == -1 ) {
+                        end = queryString.length
+                    }
+                    return unescape ( queryString.substring ( begin, end ) );
+                }
+            }
+            return "";
+        }
+        
+        var totalItems=0;
+        var currentlyEditing=null;
+        var lastEdited=null;
+        var allIDs=null;
+
+        $(function() {
+            $(".formLineEdit").hide();
+            showContextHelp("drag");
+            
+            //check to see if we've got a valid ticket
+            var projectKey=getRequestParameter("projectKey");
+            var ticket=getRequestParameter("ticket");
+            $.ajax({
+                type: "GET",
+                url: "http://epicollectserver.appspot.com/validateTicket?ticket="+ticket+"&projectKey="+projectKey,
+                dataType: "html",
+                error: function (XMLHttpRequest, textStatus, errorThrown) {
+		    var browser=navigator.userAgent.toLowerCase();
+		    if (browser.indexOf("safari")>=0 || browser.indexOf("msie")>=0)
+                        window.top.location="/login-safari.html?firstTime=true&projectKey="+projectKey; //try to prevent an infinite redirection loop
+		    else
+                        window.top.location="/login.html?firstTime=true&projectKey="+projectKey; //try to prevent an infinite redirection loop
+                },
+                success: function (xml) {
+
+                    var formKey=getRequestParameter("formKey");
+                    var formName=getRequestParameter("formName");
+                    var formVersion=getRequestParameter("formVersion");
+
+        
+                    //set the project-home link and the form-name input
+                    $("#projectHome").html('<a href="/project.html?key='+projectKey+'">Project Home</a>');
+                    var projectName=getRequestParameter("projectName");
+		    $("input[name=formName]").val(projectName);
+		    if (formName!=null && formName.length>0)
+                        $("input[name=formName]").val(formName);
+        
+                    if (formKey.length>0 || (formName.length>0 && formVersion.length>0) || projectKey.length>0) {
+                        var loadURL = "/getForm.asp?ticket="+ticket+"&projectKey="+projectKey+"&formkey="+formKey+"&formName="+formName+"&formVersion="+formVersion;
+                        $.ajax({
+                            type: "GET",
+                            url: loadURL,
+                            dataType: "xml",
+                            error: function (XMLHttpRequest, textStatus, errorThrown) {
+                                var errorString = errorThrown ? errorThrown : textStatus;
+                                if (XMLHttpRequest.responseText.indexOf("No form")==0) {
+				    // if there's no form, that's fine, it's the first form for this project
+				    showContextHelp("dragNoExisting");
+                                    setUpDestinationColumn();
+                                }
+                                else
+                                    $("#error").text("Error: "+errorString);
+                            },
+                            success:  function (xml) {
+                                //OK, we've got an XML document. Now to populate form name, version number, etc.,
+                                //and most importantly, the existing inputs.
+                                
+                                var inputCount=0;
+                                //dive down from document, to the root <xforms> element, to its children...
+                                $(xml).children().children().each( function() {
+                                    if (this.tagName=="model") {
+                                        var formName=$(this).find("submission").attr("id");
+                                        $("input[name=formName]").val(formName);
+        
+                                        var allowDownloadEdits=$(this).find("submission").attr("allowDownloadEdits");
+                                        if (allowDownloadEdits=="true")
+                                            $("input[name=allowDownloadEdits]").attr("checked", true);
+                                        
+                                        var versionNumber=$(this).find("submission").attr("versionNumber");
+                                        setVersionNumbersFor(versionNumber);
+                                    }
+                                    else if (this.tagName=="input") {
+                                        var inputDiv='<div id="textInput'+(inputCount++)+'" dropped="true" class="formLine"';
+                                        inputDiv+=getInputFlagsFor($(this));
+                                        inputDiv+='><div class="label">';
+                                        inputDiv+=$(this).find("label").text();
+                                        inputDiv+='</div><div class="formInput"><input name="inputID" value="';
+                                        inputDiv+=$(this).attr("ref");
+                                        inputDiv+='" value="'+$(this).attr("ref");
+                                        inputDiv+='" /></div></div>';
+                                        $("#destination").append(inputDiv);
+                                    }
+                                    else if (this.tagName=="textarea") {
+                                        var inputDiv='<div id="longText'+(inputCount++)+'" dropped="true" class="formLine"';
+                                        inputDiv+=getInputFlagsFor($(this));
+                                        inputDiv+='><div class="label">';
+                                        inputDiv+=$(this).find("label").text();
+                                        inputDiv+='</div><div class="formInput"><textarea name="textarea">';
+                                        inputDiv+=$(this).attr("ref");
+                                        inputDiv+='</textarea></div></div>';
+                                        $("#destination").append(inputDiv);
+                                    }
+                                    else if ((this.tagName=="select1") || (this.tagName=="select")) {
+                                        var inputDiv='<div id="';
+                                        var isSelect1 = this.tagName=="select1";
+                                        if (isSelect1)
+                                            inputDiv+='selectOne'+(inputCount++);
+                                        else
+                                            inputDiv+='selectMultiple'+(inputCount++);
+                                        inputDiv+='" dropped="true" class="formLine"';
+                                        inputDiv+=getInputFlagsFor($(this));
+                                        inputDiv+='>';
+        
+                                        var inputRef=$(this).attr("ref");
+                                        var doneFirst=false;
+                                        $(this).children().each( function() {
+                                            if (!doneFirst) {
+                                                inputDiv+='<div class="label">'+$(this).text()+'</div>';
+                                                doneFirst=true;
+                                            }
+                                            else {
+                                                inputDiv+='<div class="formInput">';
+                                                if (isSelect1)
+                                                    inputDiv+='<input type="radio" name="'+inputRef+'" value="'
+                                                else
+                                                    inputDiv+='<input type="checkbox" name="'+inputRef+'" value="'
+                                                inputDiv+=$(this).find("value").text()+'" />';
+                                                inputDiv+='<div class="optionLabel">'+$(this).find("label").text()+'</div></div>';
+                                            }
+                                        });
+                                        inputDiv+='</div>';
+                                        $("#destination").append(inputDiv);
+                                    }
+        
+                                });
+        
+                                setUpDestinationColumn();
+                            },
+                        }); //form-data ajax call
+                    } // if existing form or project
+            
+                    //respond to inputs in the edit-details column
+                    $("input[name=done]").mouseup( function() {
+                        saveCurrentInput();
+                    });
+                    $("input[name=delete]").mouseup( function() {
+                        var really = confirm ("Delete this element?")
+                        if (really) {
+                            $("#"+currentlyEditing).remove();
+			    currentlyEditing=null;
+                            $(".formLineEdit").hide();
+                            showContextHelp("drag");
+                        }
+                    });
+                    $("input[name=addSelectMultiOption]").mouseup( function() {
+                        optionClone=$("#selectMultiOption").clone();
+                        cloneRemoveButton = optionClone.find("input[name=removeSelectMultiOption]");
+                        cloneRemoveButton.bind("mouseup", function() {
+                            $(this).parent().remove();
+                        });
+                        $("#selectMultiEdit").append(optionClone);
+                    });
+                    $("input[name=addSelectOneOption]").mouseup( function() {
+                        optionClone=$("#selectOneOption").clone();
+                        cloneRemoveButton = optionClone.find("input[name=removeSelectOneOption]");
+                        cloneRemoveButton.bind("mouseup", function() {
+                            $(this).parent().remove();
+                        });
+                        $("#selectOneEdit").append(optionClone);
+                    });
+          
+                    //respond to an element being made chartable or unchartable:
+                    //former case - make it numeric, disable numeric option, activate pie/bar options, set to pie
+                    //latter case - enable numeric option, disable pie/bar options
+                    $("input[name=chart]").change( function() {
+                        if ($("input[name=chart]").attr("checked")) {
+                            if (currentlyEditing.indexOf("textInput")==0) {
+                                $("input[name=numeric]").attr("checked", true);
+                                $("input[name=numeric]").attr("disabled", true);
+                            }
+                            $("input[name=pie]").attr("disabled", false);
+                            $("input[name=pie]").attr("checked", true);
+                            $("input[name=bar]").attr("disabled", false);
+                            $("input[name=bar]").attr("checked", false);
+                        }
+                        else {
+                            if (currentlyEditing.indexOf("textInput")==0)
+                                $("input[name=numeric]").attr("disabled", false);
+                            $("input[name=pie]").attr("checked", false);
+                            $("input[name=pie]").attr("disabled", true);
+                            $("input[name=bar]").attr("checked", false);
+                            $("input[name=bar]").attr("disabled", true);
+                        }
+                    });
+        
+                    //ensure you've only ever got pie or bar
+                    $("input[name=pie]").change( function() {
+                        $("input[name=bar]").attr("checked", !$("input[name=pie]").attr("checked"));
+                    });
+                    $("input[name=bar]").change( function() {
+                        $("input[name=pie]").attr("checked", !$("input[name=bar]").attr("checked"));
+                    });
+        
+                    //convert form to XML, validate, save
+                    $("input[name=saveForm]").mouseup( function() {
+                        saveCurrentInput();
+                        var xml="";
+                        allIDs=new Array();
+                        $("#success").text("");
+                        $("#error").text("");
+                        var error=validateID("Form Name", $("input[name=formName]").val());
+                        
+                        //iterate over the form lines, creating XML and/or recording errors
+                        $("#destination > .formLine").each( function() {
+                            if ($(this).attr("id").indexOf("textInput")==0) {
+                                var inputLabel = $(this).find(".label").text();
+                                var inputID = $(this).find("input:first").val();
+                                error+=validateID(inputLabel, inputID);
+                                xml+='<input ref="'+inputID+'"'+getInputFlagsFor($(this))+'> <label>'+inputLabel+'</label> </input>\n';
+                            }
+                            else if ($(this).attr("id").indexOf("longText")==0) {
+                                var inputLabel = $(this).find(".label").text();
+                                var inputID = $(this).find("textarea").val();
+                                error+=validateID(inputLabel, inputID);
+                                xml+='<textarea ref="'+inputID+'"'+getInputFlagsFor($(this))+'> <label>'+inputLabel+'</label> </textarea>\n';
+                            }
+                            else if ($(this).attr("id").indexOf("selectMultiple")==0) {
+                                var inputLabel = $(this).find(".label").text();
+                                var inputID = $(this).find("input:first").attr("name");
+                                error+=validateID(inputLabel, inputID);
+                                xml+='<select ref="'+inputID+'"'+getInputFlagsFor($(this))+'> <label>'+inputLabel+'</label> ';
+                                $(this).find("input").each( function() {
+                                    var optionLabel = $(this).next().text();
+                                    var optionVal = $(this).attr("value");
+                                    if (optionVal.indexOf(",")>=0)
+                                        error+="\nCommas are not allowed in SELECT option values.";
+                                    if (optionLabel.length<2||optionVal.length<2)
+                                        error+="\nSELECT option labels and values must be at least 2 characters long.";                            
+                                    xml+='<item><label>'+optionLabel+'</label><value>'+optionVal+'</value></item> ';
+                                });
+                                xml+='</select>\n';
+                            }
+                            else if ($(this).attr("id").indexOf("selectOne")==0) {
+                                var inputLabel = $(this).find(".label").text();
+                                var inputID = $(this).find("input:first").attr("name");
+                                error+=validateID(inputLabel, inputID);
+                                xml+='<select1 ref="'+inputID+'"'+getInputFlagsFor($(this))+'> <label>'+inputLabel+'</label> ';
+                                $(this).find("input").each( function() {
+                                    var optionLabel = $(this).next().text();
+                                    var optionVal = $(this).attr("value");
+                                    if (optionVal.indexOf(",")>=0)
+                                        error+="\nCommas are not allowed in SELECT option values.";
+                                    if (optionLabel.length<2||optionVal.length<2)
+                                        error+="\nSELECT option labels and values must be at least 2 characters long.";                            
+                                    xml+='<item><label>'+optionLabel+'</label><value>'+optionVal+'</value></item> ';
+                                });
+                                xml+='</select1>\n';
+                            }
+                        });
+                        
+                        //check XML for flag errors
+                        if (xml.indexOf('required="true" readonly="true"')>=0)
+                            error+="\nA form element may not be simultaneously flagged as required and read-only."
+                        if (xml.indexOf(' title="true"') != xml.lastIndexOf(' title="true"'))
+                            error+="\nA form may have only one title element."
+                        if (xml.indexOf(' subtitle="true"') != xml.lastIndexOf(' subtitle="true"'))
+                            error+="\nA form may have only one subtitle element."
+                        if (xml.split('chart=').length>4)
+                            error+="\nA form may have no more than three chartable elements."
+        
+                        //done - now, either report errors, or upload XML
+                        if (error.length>0) {
+                            $("#error").text("Errors: "+error);
+                        }
+                        else {
+                            //we're error-free, we've got the XML, now send it to server
+        
+                            $.ajax({
+                                async: false,
+                                cache: false,
+                                type: "POST",
+                                url: "/saveForm.asp",
+                                data: {
+                                    "ticket" : ticket,
+                                    "projectKey" : projectKey,
+                                    "formKey" : formKey,
+                                    "formName" : $("input[name=formName]").val(),
+                                    "formVersion" : $("select[name=formVersion]").val(),
+                                    "allowDownloadEdits" : $("input[name=allowDownloadEdits]").attr("checked"),
+                                    "inputXML" : xml,
+                                },
+                                dataType: "string",
+                                error: function (XMLHttpRequest, textStatus, errorThrown) {
+                                    $("#error").text("Error: "+errorThrown);
+                                },
+                                success:  function (string) {
+                                    if (string.indexOf("Error:")>=0)
+                                        $("#error").text(string);
+                                    else {
+                                        formKey=$.trim(string);
+                                        $("#success").text("Save successful - this form is ready for use.");
+                                    }
+				    //increment version number for future saves
+				    setVersionNumbersFor($("select[name=formVersion]").val());
+                                },
+                            });
+                            
+                        }
+                    }); //save-form button pressed
+                }, //ticket success
+            }); //ticket-validation ajax call
+        }); //$(function()
+        
+        function validateID(label, id) {
+            id=$.trim(id);
+            if (id.length<=1)
+                return "\nThe ID '"+id+"' for "+label+" is invalid: values must be at least 2 characters long.";
+
+            if (id.length>1 && id.substr(0,2)=="ec")
+                return "\nThe ID '"+id+"' for "+label+" is invalid: values beginning with 'ec' are reserved for the EpiCollect system.";
+
+            var re=new RegExp("^[a-zA-Z0-9]*$");
+            if (!re.test(id))
+                return "\nThe ID '"+id+"' for "+label+" is invalid - only numbers and ASCII letters are permitted, no other characters (including spaces) are allowed.";
+
+            if ($.inArray(id, allIDs)>=0)
+                return "\nThe ID '"+id+"' for "+label+" is invalid: IDs must be unique within a form, and must not be the same as the form name.";
+
+            allIDs.push(id);
+            return "";
+        }
+
+
+        function setUpDestinationColumn() {
+            //make divs created out of XML clickable
+            $("#destination").children().each( function() {
+                $(this).bind("click", function() {
+                    showEditDetailsFor($(this));
+                });
+            });
+
+            //set up drag-and-drop stuff
+            $("#textInput").draggable(
+                {   connectToSortable:'#destination',
+                    cursor:'move',
+                    helper:'clone',
+                }
+            );
+            $("#longText").draggable(
+                {   connectToSortable:'#destination',
+                    cursor:'move',
+                    helper:'clone',
+                }
+            );
+            $("#selectMultiple").draggable(
+                {   connectToSortable:'#destination',
+                    cursor:'move',
+                    helper:'clone',
+                }
+            );
+            $("#selectOne").draggable(
+                {   connectToSortable:'#destination',
+                    cursor:'move',
+                    helper:'clone',
+                }
+            );
+            $("#destination").sortable(
+                {
+                    change: function(event, ui) {
+                        ui.placeholder.css({visibility: 'visible', border : '2px solid yellow'});
+                    },
+                    start: function(event, ui) {
+                        ui.placeholder.css({visibility: 'visible', border : '2px solid yellow'});
+                        var tempID=ui.item.attr("id");
+                        if (tempID.indexOf("_")==-1) {
+                            tempID=tempID+"_"+totalItems++;
+                            ui.item.attr({id:tempID});
+                        }
+                        showContextHelp("dragging");
+                    },
+                    stop: function(event, ui) {
+                        //load element details, and ensure they'll show up again when this item is clicked
+                        showEditDetailsFor(ui.item);
+                        if (ui.item.attr("dropped")!="true") { //if this is the first time it's dropped
+                            $(".formLineEdit").find("input[type!=submit]").val(""); //wipe any existing values in the edit fields
+                            ui.item.bind("click", function() {
+                                showEditDetailsFor(ui.item);
+                            });
+                        }
+                        ui.item.attr("dropped","true");
+                    },
+                }
+            );
+        }
+
+
+        function saveCurrentInput() {
+            if (currentlyEditing==null)
+                return;
+
+            if (currentlyEditing.indexOf("textInput")==0) {
+                var labelText=$("input[name=textInputLabel]").val();
+                var idText=$("input[name=textInputValue]").val();
+                $("#"+currentlyEditing+" > .label").text(labelText);
+                $("#"+currentlyEditing).find("input[name=inputID]").val(idText);
+                setFlagAttributes($('#'+currentlyEditing));
+            }
+            else if (currentlyEditing.indexOf("longText")==0) {
+                var labelText=$("input[name=longTextLabel]").val();
+                var idText=$("input[name=longTextValue]").val();
+                $("#"+currentlyEditing+" > .label").text(labelText);
+                $("#"+currentlyEditing).find("textarea[name=textarea]").val(idText);
+                setFlagAttributes($('#'+currentlyEditing));
+            }
+            else if (currentlyEditing.indexOf("selectMulti")==0) {
+                //set label, remove existing inputs
+                var labelText=$("input[name=selectMultiLabel]").val();
+                $("#"+currentlyEditing+" > .label").text(labelText);
+                $("#"+currentlyEditing).find(".formInput").remove();
+                $("#"+currentlyEditing).find(".optionLabel").remove();
+                $("#"+currentlyEditing).find("input[type=checkbox]").remove();
+
+                //plug in new ones
+                var idText=$("input[name=selectMultiValue]").val();
+                editDiv=$("#selectMultiEdit");
+                editDiv.find(".selectOption").each( function() {
+                    var optionLabel=$(this).find("input[name=multiOptionLabel]").val();
+                    var optionValue=$(this).find("input[name=multiOptionValue]").val();
+                    var newOption = '<div class="formInput"><input type="checkbox" name="'+idText+'" value="'+optionValue+'" /><div class="optionLabel">'+optionLabel+'</div></div>';
+                    if ($("#"+currentlyEditing).html().indexOf(newOption)==-1)
+                        $("#"+currentlyEditing).append(newOption);
+                    $("#"+currentlyEditing).html($("#"+currentlyEditing).html().replace("<br><br>","<br>")); // I really have no idea why this is necessary
+                });
+                setFlagAttributes($('#'+currentlyEditing));
+            }
+            else if (currentlyEditing.indexOf("selectOne")==0) {
+                //set label, remove existing inputs
+                var labelText=$("input[name=selectOneLabel]").val();
+                $("#"+currentlyEditing+" > .label").text(labelText);
+                $("#"+currentlyEditing).find(".formInput").remove();
+                $("#"+currentlyEditing).find(".optionLabel").remove();
+                $("#"+currentlyEditing).find("input[type=radio]").remove();
+
+                //plug in new ones
+                var idText=$("input[name=selectOneValue]").val();
+                editDiv=$("#selectOneEdit");
+                editDiv.find(".selectOption").each( function() {
+                    var optionLabel=$(this).find("input[name=oneOptionLabel]").val();
+                    var optionValue=$(this).find("input[name=oneOptionValue]").val();
+                    var newOption = '<div class="formInput"><input type="radio" name="'+idText+'" value="'+optionValue+'" /><div class="optionLabel">'+optionLabel+'</div></div>'
+                    if ($("#"+currentlyEditing).html().indexOf(newOption)==-1)
+                        $("#"+currentlyEditing).append(newOption);
+                    $("#"+currentlyEditing).html($("#"+currentlyEditing).html().replace("<br><br>","<br>")); // I really have no idea why this is necessary
+                });
+                setFlagAttributes($('#'+currentlyEditing));
+            }
+        }
+
+        function showEditDetailsFor ( object ) {
+            saveCurrentInput();
+
+            currentlyEditing=object.attr("id");
+            if (currentlyEditing==lastEdited)
+                return;
+
+            $(".formLineEdit").hide();
+            setDetailFlagsFor(object);
+            $("#inputOptions").show();
+
+            if (object.attr("id").indexOf("textInput")==0) {
+                var inputLabel = $.trim(object.find(".label").text());
+                var inputID = object.find("input[name=inputID]").val();
+                if (inputLabel!="Text Input" || object.find("input[name=inputID]").attr("name")!="inputID") {
+                    $("#textInputEdit").find("input[name=textInputLabel]").val(inputLabel);
+                    $("#textInputEdit").find("input[name=textInputValue]").val(inputID);
+                }
+                $("#textInputEdit").show();
+                $("input[name=numeric]").attr("disabled", false);
+                $("input[name=chart]").attr("disabled", false);
+            }
+            else if (object.attr("id").indexOf("longText")==0) {
+                var inputLabel = $.trim(object.find(".label").text());
+                var inputID = object.find("textarea:first").val();
+                if (inputLabel!="Long Text" || inputID!="") {
+                    $("#longTextEdit").find("input[name=longTextLabel]").val(inputLabel);
+                    $("#longTextEdit").find("input[name=longTextValue]").val(inputID);
+                }
+                $("#longTextEdit").show();
+                $("input[name=numeric]").attr("disabled", true);
+                $("input[name=chart]").attr("disabled", true);
+            }
+            else if (object.attr("id").indexOf("selectMultiple")==0) {
+                var inputLabel = $.trim(object.find(".label:first").text());
+                var inputID = object.find("input:last").attr("name");
+                if (inputLabel!="Select Multiple" || inputID!="selectMulti") {
+                    $("#selectMultiEdit").find("input[name=selectMultiLabel]").val(inputLabel);
+                    $("#selectMultiEdit").find("input[name=selectMultiValue]").val(inputID);
+                    var blankOption=$("#selectMultiEdit > .selectOption:first");
+                    $("#selectMultiEdit > .selectOption").remove();
+                    var addedChild=false;
+                    object.children(".formInput").each( function() {
+                        optionClone=blankOption.clone();
+                        var optionLabel=$(this).find(".optionLabel").text();
+                        optionClone.find("input[name=multiOptionLabel]").val(optionLabel);
+                        var optionValue=$(this).find("input:first").attr("value");
+                        optionClone.find("input[name=multiOptionValue]").val(optionValue);
+                        cloneRemoveButton = optionClone.find("input[name=removeSelectMultiOption]");
+                        cloneRemoveButton.bind("mouseup", function() {
+                            $(this).parent().remove();
+                        });
+                        $("#selectMultiEdit").append(optionClone);
+                        addedChild=true;
+                    });
+                    if (!addedChild)
+                        $("#selectMultiEdit").append(blankOption);
+                } //don't show defaults
+                $("#selectMultiEdit").show();
+                $("input[name=numeric]").attr("disabled", true);
+                $("input[name=chart]").attr("disabled", false);
+            }
+            else if (object.attr("id").indexOf("selectOne")==0) {
+                var inputLabel = $.trim(object.find(".label:first").text());
+                var inputID = object.find("input:last").attr("name");
+                if (inputLabel!="Select One" || inputID!="selectOne") {
+                    $("#selectOneEdit").find("input[name=selectOneLabel]").val(inputLabel);
+                    $("#selectOneEdit").find("input[name=selectOneValue]").val(inputID);
+                    var blankOption=$("#selectOneEdit > .selectOption:first");
+                    $("#selectOneEdit > .selectOption").remove();
+                    var addedChild=false;
+                    object.children(".formInput").each( function() {
+                        optionClone=blankOption.clone();
+                        var optionLabel=$(this).find(".optionLabel").text();
+                        optionClone.find("input[name=oneOptionLabel]").val(optionLabel);
+                        var optionValue=$(this).find("input:first").attr("value");
+                        optionClone.find("input[name=oneOptionValue]").val(optionValue);
+                        cloneRemoveButton = optionClone.find("input[name=removeSelectOneOption]");
+                        cloneRemoveButton.bind("mouseup", function() {
+                            $(this).parent().remove();
+                        });
+                        $("#selectOneEdit").append(optionClone);
+                        addedChild=true;
+                    });
+                    if (!addedChild)
+                        $("#selectOneEdit").append(blankOption);
+                } //don't show defaults
+                $("#selectOneEdit").show();
+                $("input[name=numeric]").attr("disabled", true);
+                $("input[name=chart]").attr("disabled", false);
+            }
+            lastEdited=currentlyEditing;
+            showContextHelp("edit");
+        }
+
+        // converts an object's flags into a XML (or HTML div) attribute string
+        function getInputFlagsFor ( object ) {
+            var flags='';
+            if (object.attr("required")=="true")
+                flags+=' required="true"';
+            if (object.attr("readonly")=="true")
+                flags+=' readonly="true"';
+            if (object.attr("title")=="true")
+                flags+=' title="true"';
+            if (object.attr("subtitle")=="true")
+                flags+=' subtitle="true"';
+            if (object.tagName="input" && object.attr("numeric")=="true")
+                flags+=' numeric="true"';
+            if (object.attr("chart")=="pie")
+                flags+=' chart="pie"';
+            else if (object.attr("chart")=="bar")
+                flags+=' chart="bar"';
+            return flags;
+        }
+
+        function setDetailFlagsFor ( object ) {
+            //clear any existing flags
+            $("#inputOptions").find("input[name=required]").attr("checked",false);
+            $("#inputOptions").find("input[name=readonly]").attr("checked",false);
+            $("#inputOptions").find("input[name=title]").attr("checked",false);
+            $("#inputOptions").find("input[name=subtitle]").attr("checked",false);
+            $("#inputOptions").find("input[name=numeric]").attr("checked",false);
+            $("#inputOptions").find("input[name=chart]").attr("checked",false);
+            $("#inputOptions").find("input[name=pie]").attr("checked",false);
+            $("#inputOptions").find("input[name=pie]").attr("disabled",true);
+            $("#inputOptions").find("input[name=bar]").attr("checked",false);
+            $("#inputOptions").find("input[name=bar]").attr("disabled",true);
+
+            //reset them as appropriate
+            if (object.attr("required")=="true")
+                $("#inputOptions").find("input[name=required]").attr("checked",true);
+            if (object.attr("readonly")=="true")
+                $("#inputOptions").find("input[name=readonly]").attr("checked",true);
+            if (object.attr("title")=="true")
+                $("#inputOptions").find("input[name=title]").attr("checked",true);
+            if (object.attr("subtitle")=="true")
+                $("#inputOptions").find("input[name=subtitle]").attr("checked",true);
+            if (object.attr("numeric")=="true")
+                $("#inputOptions").find("input[name=numeric]").attr("checked",true);
+
+            if (object.attr("chart")=="pie") {
+                $("#inputOptions").find("input[name=chart]").attr("checked",true);
+                $("#inputOptions").find("input[name=pie]").attr("checked",true);
+            }
+            else if (object.attr("chart")=="bar") {
+                $("#inputOptions").find("input[name=chart]").attr("checked",true);
+                $("#inputOptions").find("input[name=bar]").attr("checked",true);
+            }
+        }
+
+        //set the element's attributes as per the checkboxes in the edit-details column
+        function setFlagAttributes ( object ) {
+            object.attr("required", $("#inputOptions").find("input[name=required]").attr("checked"));
+            object.attr("readonly", $("#inputOptions").find("input[name=readonly]").attr("checked"));
+            object.attr("title", $("#inputOptions").find("input[name=title]").attr("checked"));
+            object.attr("subtitle", $("#inputOptions").find("input[name=subtitle]").attr("checked"));
+            object.attr("numeric", $("#inputOptions").find("input[name=numeric]").attr("checked"));
+            if ($("#inputOptions").find("input[name=chart]").attr("checked"))
+                object.attr("chart",  $("#inputOptions").find("input[name=pie]").attr("checked") ? "pie" : "bar");
+            else
+                object.attr("chart",null);
+        }
+
+        function setVersionNumbersFor(existingNumber) {
+            //handle version number - annoyingly tricky
+            var floatVersion = parseFloat(existingNumber);
+            if (!isNaN(floatVersion)) {
+                versionNumber1=floatVersion+0.1;
+                versionNumber2=parseInt(floatVersion)+1;
+                if ((""+versionNumber1).length>5) {
+                    versionNumber1=(""+versionNumber1).substr(0,5);
+                    while (versionNumber1.charAt(versionNumber1.length-1)=="0"
+                           && versionNumber1.charAt(versionNumber1.length-2)!=".") {
+                        versionNumber1=versionNumber1.substr(0,versionNumber1.length-1);
+                    }
+                }
+                $("select[name=formVersion]").find("option:first").attr("name",versionNumber1);
+                $("select[name=formVersion]").find("option:first").text(versionNumber1);
+                $("select[name=formVersion]").find("option:last").attr("name",versionNumber2+".0");
+                $("select[name=formVersion]").find("option:last").text(versionNumber2+".0");
+                $("select[name=formVersion]").val(versionNumber1);
+            }
+        }
+
+        function showContextHelp(helpType) {
+            if (helpType=="dragNoExisting")
+               $("#contextHelp").html("Drag the type of input you want from the left-hand column into the middle column.<BR/>Click on View Form Help for help.")
+            if (helpType=="drag")
+               $("#contextHelp").html("Drag the type of input you want from the left-hand column into the middle column,<BR/>or click on an already-defined input in the middle column.")
+            else if (helpType=="dragging")
+               $("#contextHelp").html("The yellow box indicates where the dropped input will go.")
+            else if (helpType=="edit")
+               $("#contextHelp").html("Edit the label, ID, and other attributes of the input in the right-hand column.<BR/>Select 'Done' or another input to save your changes.<BR/>You can drag a new input onto the form at any time.")
+        }
+
+    </script>
+
+</head>
+
+<body font='Helvetica'>
+    <div id="header">
+        <table width="800"><tr>
+        <td align="left"><a href="/"><img border="0" src="/static/Icon.jpg" width="45" height="45"></a></td>
+        <td align="center"<h2>EpiCollect Server</h2></td>
+        <td align="right"><img src="http://code.google.com/appengine/images/appengine-silver-120x30.gif"
+alt="Powered by Google App Engine" height=30 width=120/></td>
+        </tr><tr><td colspan=3><HR></td>
+        </tr></table>
+    </div>
+
+    <div id="content">
+        <table width="800"><tr><td width="50">&nbsp;</td>
+        <td>
+
+<center><H3>EpiCollect Form Builder</H3></center>
+<div id="header">
+    <table width=100%><tr><td align=left>
+        <div id="projectHome"><a href="/projectHome.asp?key=">Project Home</a></div>
+    </td><td align=right>
+        <div id="viewHelp"><a href="/formHelp.asp" target="_blank">View Form Help</a></div>
+    </td></tr></table>
+
+    <div id="success"></div>
+    <div id="error"><PRE></PRE></div>
+
+    <HR/>    
+    <div id="contextHelp">
+    </div>
+    <HR/>    
+</div>
+<P/>
+<div class="columns">
+    <div id="source" class="column first">
+        <b>Form Elements</b><HR/>
+        <div id="textInput" class="formLine">
+            <div class="label">Text Input</div><div class="formInput"><input name="inputID" /></div>
+        </div>
+        <HR/>
+        <div id="longText" class="formLine">
+            <div class="label">Long Text</div>
+            <div class="formInput"><textarea name="textarea"></textarea></div>
+        </div>
+        <HR/>
+        <div id="selectMultiple" class="formLine">
+            <div class="label">Select Multiple</div>
+            <div class="formInput">
+                <input type="checkbox" name="selectMulti" value="one" />
+                <div class="optionLabel">One</div>
+            </div>
+            <div class="formInput">
+                <input type="checkbox" name="selectMulti" value="two" />
+                <div class="optionLabel">Two</div>
+            </div>
+        </div>
+        <HR/>
+        <div id="selectOne" class="formLine">
+            <div class="label">Select One</div>
+            <div class="formInput">
+                <input type="radio" name="selectOne" value="one" />
+                <div class="optionLabel">One</div>
+            </div>
+            <div class="formInput">
+                <input type="radio" name="selectOne" value="two" />
+                <div class="optionLabel">Two</div>
+            </div>
+        </div>
+    </div> <!--source-->
+    <div id="middle" class="column second">
+        <b>Form</b> (drag elements here)
+        <HR/><HR/><P/>
+        <div id="destination">&nbsp;</div>
+        <P/><HR/><HR/>
+    </div>
+    <div id="details" class="column last">
+        <div id="detailHeader"><b>Element Details</b><HR/></div>
+        <div id="textInputEdit" class="formLineEdit">
+            <div class="editHeader">
+                <b>Text Input</b>
+                <input type="submit" name="done" value="Done" />
+                <input type="submit" name="delete" value="Delete" />
+            </div>
+            <BR/><a href="/formHelp.asp#labels" target="_blank">Label</a><input name="textInputLabel" type="text" />
+            <BR/><a href="/formHelp.asp#ids" target="_blank">ID</a><input name="textInputValue" />
+        </div>
+        <div id="longTextEdit" class="formLineEdit">
+            <div class="editHeader">
+                <b>Long Text</b>
+                <input type="submit" name="done" value="Done" />
+                <input type="submit" name="delete" value="Delete" />
+            </div>
+            <BR/><a href="/formHelp.asp#labels" target="_blank">Label</a><input name="longTextLabel" />
+            <BR/><a href="/formHelp.asp#ids" target="_blank">ID</a><input name="longTextValue" />
+        </div>
+        <div id="selectMultiEdit" class="formLineEdit">
+            <div class="editHeader">
+                <b>Select Multiple</b>
+                <input type="submit" name="done" value="Done" />
+                <input type="submit" name="delete" value="Delete" />
+            </div>
+            <BR/><a href="/formHelp.asp#labels" target="_blank">Label</a><input name="selectMultiLabel" />
+            <BR/><a href="/formHelp.asp#ids" target="_blank">ID</a><input name="selectMultiValue" />
+            <HR/>
+            <input type="submit" name="addSelectMultiOption" value="Add Option" />
+            <HR/>
+            <div id="selectMultiOption" class="selectOption">
+                <i>Option</i>: <a href="/formHelp.asp#editSelects" target="_blank">Name</a> <input name="multiOptionLabel" size=12/>
+                <BR/><a href="/formHelp.asp#editSelects" target="_blank">Value</a><input name="multiOptionValue" size=12/>
+                <BR/><input type="submit" name="removeSelectMultiOption" value="Remove" />
+                <HR/>
+            </div>
+        </div>
+        <div id="selectOneEdit" class="formLineEdit">
+            <div class="editHeader">
+                <b>Select One</b>
+                <input type="submit" name="done" value="Done" />
+                <input type="submit" name="delete" value="Delete" />
+            </div>
+            <BR/><a href="/formHelp.asp#labels" target="_blank">Label</a><input name="selectOneLabel" />
+            <BR/><a href="/formHelp.asp#ids" target="_blank">ID</a><input name="selectOneValue" />
+            <HR/>
+            <input type="submit" name="addSelectOneOption" value="Add Option" />
+            <HR/>
+            <div id="selectOneOption" class="selectOption">
+                <i>Option</i>: <a href="/formHelp.asp#editSelects" target="_blank">Name</a><input name="oneOptionLabel" size=12/>
+                <BR/><a href="/formHelp.asp#editSelects" target="_blank">Value</a><input name="oneOptionValue" size=12/>
+                <BR/><input type="submit" name="removeSelectOneOption" value="Remove" />
+                <HR/>
+            </div>
+        </div>
+        <div id="inputOptions" class="formLineEdit">
+            <HR/>
+            <a href="/formHelp.asp#flags" target="_blank">Required</a> <input type="checkbox" name="required">
+            <BR/><a href="/formHelp.asp#flags" target="_blank">Read-Only</a> <input type="checkbox" name="readonly">
+            <BR/><a href="/formHelp.asp#flags" target="_blank">Title</a> <input type="checkbox" name="title">
+            <BR/><a href="/formHelp.asp#flags" target="_blank">Subtitle</a> <input type="checkbox" name="subtitle">
+            <BR/><div id="numericFlag" style="display:inline"><a href="/formHelp.asp#flags" target="_blank">Numeric</a> <input type="checkbox" name="numeric"></div>
+            <BR/><a href="/formHelp.asp#flags" target="_blank">Chartable</a> <input type="checkbox" name="chart">
+            <BR/><div id="chartType">(pie<input type="radio" name="pie" disabled="true"> bar<input type="radio" name="bar" disabled="true">)</div>
+        </div>
+    </div> <!-- details-->
+</div> <!--columns-->
+<P/>
+<div class="formOptions">
+    Allow users to edit entries initially recorded on other users' devices? (<a href="/formHelp.asp#allowDownloadEdits" target="_blank">help</a>) <input type="checkbox" name="allowDownloadEdits">
+</div>
+<P/>
+<div class="footers">
+    <div id="formSubmitButton" class="footer first"><input type="submit" name="saveForm" value="Finished - Save Form!" /></div>
+    <div id="formName" class="footer second"><b>Form Name</b>: <input name="formName" value="" size=10 length=64 /></div>
+    <div id="formVersionNumber" class="footer last">
+        <b>Version Number</b>:
+        <select name="formVersion">
+            <option name="0.1">0.1</option>
+            <option name="1.0" selected>1.0</option>
+        </select>
+    </div>
+</div>
+
+</td>
+
+
+        <td width="50">&nbsp;</td></tr></table>
+    </div>
+
+    <div id="footer">
+        <table width="800">
+        <tr><td colspan=3><HR></td></tr>
+        <tr><td width="10">&nbsp;</td>
+        <td align=center>
+        | <a href="/">Home</a> | <a href="/about">About</a> | <a href="/media">Media</a> | <a href="/tutorial">Tutorial</a> | <a href="/help">Help</a> | <a href="/create-project.html">Create Project</a> |
+        </td>
+        <td width="10">&nbsp;</td>
+        </tr></table>
+    </div>
+</body>
+</html>
