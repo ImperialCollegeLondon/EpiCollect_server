@@ -368,57 +368,81 @@ class GetEntries(webapp.RequestHandler):
       #logging.info("got form")
       fieldNames = formHandler.getFields(form)
       #logging.info("form has " + str(len(fieldNames)) + " fields")
-      entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name).fetch(num, offset)
+      entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name)
       
       entryHandler=ec.EntryHandler()
       i=0
-      strOut = "["
+      count = 0
+      self.response.out.write("[")
       
-      while i < len(entries):
+      for ent in entries:
         j=0
+        if count == num :
+            #self.response.out.write("break")
+            break
+        if i < offset :
+            i += 1
+            #self.response.out.write("continue %s" % i)
+            continue
+        
         photoUrl = "http://epicollectserver.appspot.com/static/no_image.png"
-        if entries[i].hasPhoto():
-          if re.match("^[A-Za-z0-9=_-]*$",entries[i].photoPath) is None:
-            photoUrl = 'showImageWithKey?imageKey=' + str(entries[i].key())
+        if ent.hasPhoto():
+          if re.match("^[A-Za-z0-9=_-]*$",ent.photoPath) is None:
+            photoUrl = 'showImageWithKey?imageKey=' + str(ent.key())
           else:
             logging.info("getting blobstore image")
-            photoUrl = 'showImageWithKey?imageKey=' + str(entries[i].photoPath)
-          
-        strOut += "{"
-        strOut += "\"key\" : \"" + str(entries[i].key()) + "\",\"title\" : \"" + entryHandler.getTitleStringFor(entries[i]).replace("\n", "<br />").replace("'", "\\'").replace("\r", "").replace("\"", "\\\"").replace("\t", " ") + "\","
-        strOut += "\"dateCreated\" : \"" + str(entries[i].timeCreated) + "\",\"latitude\" : \"" +str(entries[i].location.lat) + "\","
-        strOut += "\"longitude\" : \"" +str(entries[i].location.lon)+ "\","
-        strOut += "\"altitude\" : \"" +str(entries[i].altitude)+ "\","
-        strOut += "\"photo\" : \"" +photoUrl+ "\","
-        strOut += "\"image\" : \"<img src=\\\"" +photoUrl+ "\\\" height=\\\"32\\\"/>\","
-        strOut += "\"deviceId\" : \"" +str(entries[i].deviceID)+ "\","
-        strOut += "\"entryId\" : \"" +str(entries[i].entryID)+ "\","
-        strOut += "\"lastEdited\" : \"" +str(entries[i].lastEdited)+ "\","
-        strOut += "\"timeUploaded\" : \"" +str(entries[i].timeUploaded)+ "\","
-        strOut += "\"enterpriseName\" : \"" +str(entries[i].enterpriseName)+ "\","
-        strOut += "\"projectName\" : \"" +entries[i].projectName + "\","
+            photoUrl = 'showImageWithKey?imageKey=' + str(ent.photoPath)
+        if count > 0:
+            self.response.out.write(",")
+        self.response.out.write("{")
+        self.response.out.write("\"key\" : \"" + str(ent.key()) + "\",\"title\" : \"" + entryHandler.getTitleStringFor(ent).replace("\n", "<br />").replace("'", "`").replace("\r", "").replace("\"", "\\\"").replace("\t", " ") + "\",")
+        self.response.out.write("\"dateCreated\" : \"" + str(ent.timeCreated) + "\",\"latitude\" : \"" +str(ent.location.lat) + "\",")
+        self.response.out.write("\"longitude\" : \"" +str(ent.location.lon)+ "\",")
+        self.response.out.write("\"altitude\" : \"" +str(ent.altitude)+ "\",")
+        self.response.out.write("\"photo\" : \"" +photoUrl+ "\",")
+        self.response.out.write("\"image\" : \"<img src=\\\"" +photoUrl+ "\\\" height=\\\"32\\\"/>\",")
+        self.response.out.write("\"deviceId\" : \"" +str(ent.deviceID)+ "\",")
+        self.response.out.write("\"entryId\" : \"" +str(ent.entryID)+ "\",")
+        self.response.out.write("\"lastEdited\" : \"" +str(ent.lastEdited)+ "\",")
+        self.response.out.write("\"timeUploaded\" : \"" +str(ent.timeUploaded)+ "\",")
+        self.response.out.write("\"enterpriseName\" : \"" +str(ent.enterpriseName)+ "\",")
+        self.response.out.write("\"projectName\" : \"" +ent.projectName + "\",")
         
+        vals = dict(zip(ent.fieldNames, ent.fieldValues))
+        j = 0
         while j<len(fieldNames):
-          k=0
-          added = False
-          while k<len(entries[i].fieldNames):
-              #logging.info(entries[i].fieldNames[k] +" " + fieldNames[j])
-              
-              if entries[i].fieldNames[k] == fieldNames[j]:
-                strOut += "\"" + fieldNames[j] + "\":\"" + entries[i].fieldValues[k].replace("\n", "<br />").replace("'", "\\'").replace("\r", "").replace("\"", "\\\"").replace("\t", " ") + "\""
-                added=True
-              k+=1
-          if not added:
-            strOut += "\"" + fieldNames[j] + "\":\"\""
-          if j < len(fieldNames) - 1:
-            strOut += ","
-          j+=1
-          
-        strOut += "}"
-        if i < len(entries) - 1:
-          strOut += ","
+            field = unicode(fieldNames[j])
+            if(j > 0):
+               self.response.out.write(",")
+            if vals.has_key(field):
+                self.response.out.write("\"%s\":\"%s\""  % (field, vals[field].replace("\n", "<br />").replace("'", "`").replace("\r", "").replace("\"", "\\\"").replace("\t", " ")))
+            else:
+               self.response.out.write("\"%s\":\"\""  % (field))
+            j+=1
+        self.response.out.write("}")
         i+=1
-      self.response.out.write(strOut + "]")
+        count += 1
+        # while j<len(fieldNames):
+          # k=0
+          # added = False
+          # while k<len(entries[i].fieldNames):
+              # logging.info(entries[i].fieldNames[k] +" " + fieldNames[j])
+              
+              # if entries[i].fieldNames[k] == fieldNames[j]:
+                # strOut += "\"" + fieldNames[j] + "\":\"" + entries[i].fieldValues[k].replace("\n", "<br />").replace("'", "\\'").replace("\r", "").replace("\"", "\\\"").replace("\t", " ") + "\""
+                # added=True
+              # k+=1
+          # if not added:
+            # strOut += "\"" + fieldNames[j] + "\":\"\""
+          # if j < len(fieldNames) - 1:
+            # strOut += ","
+          # j+=1
+          
+        # strOut += "}"
+        # if i < len(entries) - 1:
+          # strOut += ","
+        # i+=1
+      self.response.out.write("]")
 
 class MiniDomTest(webapp.RequestHandler):
   def get(self):
@@ -470,56 +494,47 @@ class ListEntriesCSV(webapp.RequestHandler):
     results = []
     self.response.headers['Content-Type'] = 'text/csv'
     if form is not None:
-      #logging.info("got form")
-      fieldNames = formHandler.getFields(form)
-      #logging.info("form has " + str(len(fieldNames)) + " fields")
-      entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name).fetch(100)
-      
-      entryHandler=ec.EntryHandler()
-      i=0
-      p=0
-          
-      self.response.out.write('key,title,dateCreated,latitude,longitude,altitude,deviceId,entryId,lastEdited,timeUploaded,projectName,photo,')
-          
-      while i < len(entries):
-        fields = []
-        j=0
-        if i == 0 and p == 0:
-          while j<len(fieldNames):
-            self.response.out.write(fieldNames[j] + ',')
-            j += 1
-          self.response.out.write('\r\n')
-          j=0
-        
-        self.response.out.write(getString(entries[i].key()) + ',' + entryHandler.getTitleStringFor(entries[i]).replace('\n', ' ').replace('\r', '')  + ',' + getString(entries[i].timeCreated)+
-          ',' + getString(entries[i].location.lat) +',' + getString(entries[i].location.lon) + ',' + getString(entries[i].altitude) +
-          ',' + getString(entries[i].deviceID)+ ',' + getString(entries[i].entryID) + ',' + getString(entries[i].lastEdited) + ',' + getString(entries[i].timeUploaded)+
-          ',' + getString(entries[i].projectName) + ',"http://epicollectserver.appspot.com/showImageWithKey?imageKey=' + getString(entries[i].key())+'",')
-          
-        while j<len(fieldNames):
-          #value = entries[i].fieldValues[j]
-          #if (re.match('ec[A-Z]|epicollect_insert', entries[i].fieldNames[j]) is None):
-          k=0
-          added = False
-          while k<len(entries[i].fieldNames):
-            #logging.info(entries[i].fieldNames[k] +" " + fieldNames[j])
-            if entries[i].fieldNames[k] == fieldNames[j]:
-              self.response.out.write('"' + getString(entries[i].fieldValues[k]).replace('\n', ' ').replace('\r', '') + '",')
-              added = True
-              break
-            
-            k+=1
-          if not added:
-            self.response.out.write(',')
-          j+=1
-        self.response.out.write('\r\n')
-        i+=1
-        if i == len(entries):
-          p+=1
-          entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name).fetch(100, 100 * p)
-          if len(entries) > 0:
-            i = 0;
-        
+		#logging.info("got form")
+		fieldNames = formHandler.getFields(form)
+		#logging.info("form has " + str(len(fieldNames)) + " fields")
+		entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name)
+
+		entryHandler=ec.EntryHandler()
+		i=0
+		p=0
+		j=0
+		self.response.out.write('key,dateCreated,latitude,longitude,altitude,deviceId,entryId,lastEdited,timeUploaded,projectName,photo,')
+		while j<len(fieldNames):
+			self.response.out.write(fieldNames[j] + ',')
+			j += 1
+		self.response.out.write('\r\n')
+
+		
+		for ent in entries:
+
+			self.response.out.write(getString(ent.key()) + ',' + getString(ent.timeCreated)+
+			',' + getString(ent.location.lat) +',' + getString(ent.location.lon) + ',' + getString(ent.altitude) +
+			',' + getString(ent.deviceID)+ ',' + getString(ent.entryID) + ',' + getString(ent.lastEdited) + ',' + getString(ent.timeUploaded)+
+			',' + getString(ent.projectName) + ',"http://epicollectserver.appspot.com/showImageWithKey?imageKey=' + getString(ent.key())+'",')
+
+			vals = dict(zip(ent.fieldNames, ent.fieldValues))
+			j = 0
+			while j<len(fieldNames):
+				field = unicode(fieldNames[j])
+				if vals.has_key(field):
+					self.response.out.write('"%s",' % vals[field].replace('\n', ' ').replace('"', '`'))
+				else:
+					self.response.out.write('"",')
+				j += 1 
+				
+			self.response.out.write('\r\n')
+			i += 1
+			
+			#if i == 100:
+			#	p+=1
+			#	entries = db.GqlQuery("Select * FROM Entry WHERE projectName = :1", project.name).fetch(100, 100 * p)
+			#	if len(entries) > 0:
+			#		i = 0;
         
 def getString(obj):
   if obj is None:
@@ -818,6 +833,16 @@ class GetMapKML(webapp.RequestHandler):
     else:
       self.response.out.write("No project indicated - you must pass in a project key")
 
+class GetKMLFeed(webapp.RequestHandler):
+    def get(self):
+        projectKey = self.request.get("projectKey")
+        if projectKey!=None and len(projectKey.strip())>0:
+            self.response.headers['Content-Type'] = "application/vnd.google-earth.kml+xml"
+            self.response.headers['Content-Disposition'] = 'attachment; filename='+str(time.time())+'.kml'
+             
+            self.response.out.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><kml xmlns=\"http://www.opengis.net/kml/2.2\" xmlns:gx=\"http://www.google.com/kml/ext/2.2\" xmlns:kml=\"http://www.opengis.net/kml/2.2\" xmlns:atom=\"http://www.w3.org/2005/Atom\"><NetworkLink><name>EpiCollect</name><open>1</open><Link><href>" + self.request.url.replace("getKmlFeed", "getMapKml") + "</href><refreshMode>onInterval</refreshMode><refreshInterval>30</refreshInterval></Link></NetworkLink></kml>")
+        else:
+            self.response.out.write("No project indicated - you must pass in a project key")
 
 class ValidateTicket(webapp.RequestHandler):
   def get(self):
@@ -1095,6 +1120,7 @@ def main():
     ('/getMapXML', GetMapXML),
     ('/getMapKML', GetMapKML),
     ('/getMapKml', GetMapKML),
+    ('/getKmlFeed', GetKMLFeed),
     
     ('/sendFeedback', StoreMessage),
     ('/feedback', ListMessages),

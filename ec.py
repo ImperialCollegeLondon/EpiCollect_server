@@ -550,12 +550,12 @@ class EntryHandler:
         i=0
         for fieldName in entry.fieldNames:
           fn = fieldName.replace(' ', '_').replace('?','')
-          xml+="<f_"+fn+">"+entry.fieldValues[i]+"</f_"+fn+">"
+          xml+="<f_"+fn+">"+entry.fieldValues[i].replace('&', '&amp;')+"</f_"+fn+">"
           i+=1
         i=0
         for name in entry.longFieldNames:
           fn = fieldName.replace(' ', '_').replace('?','')
-          xml+="<f_"+fn+">"+entry.longFieldValues[i]+"</f_"+fn+">"
+          xml+="<f_"+fn+">"+entry.longFieldValues[i].replace('&', '&amp;')+"</f_"+fn+">"
           i+=1
         xml+="</Record>"
         j += 1
@@ -588,6 +588,9 @@ class EntryHandler:
     kml+= '<name>EpiCollect</name>\n<Folder>\n<name>EpiCollect Sites</name>\n<visibility>1</visibility>\n'
 
     for entry in entries:
+      if entry.location.lat == 0 and entry.location.lon == 0:
+          continue
+        
       kml+='<Placemark>\n<styleUrl>#exampleStyleMap</styleUrl>\n'
 
       if entry.hasPhoto():
@@ -602,11 +605,15 @@ class EntryHandler:
       i=0
       for fieldName in entry.fieldNames:
         lower=fieldName.lower()
+        
         entryDict[lower]=entry.fieldValues[i]
         if not lower.startswith("ec"):
           kml+='<br/>'+fieldName+' - '+entry.fieldValues[i]
         elif lower=="ectimecreated":
-          seconds=float(entry.fieldValues[i])
+          if entry.fieldValues[i] is None:
+              seconds = 0
+          else:
+              seconds=float(entry.fieldValues[i])
           if seconds>1000000000000.0: # if we're dealing with milliseconds not seconds
             seconds=seconds/1000
           kml+='<br/>Time created - '+str(datetime.utcfromtimestamp(seconds))
@@ -616,6 +623,10 @@ class EntryHandler:
             seconds=seconds/1000
           kml+='<br/>Last edited - '+str(datetime.utcfromtimestamp(seconds))
         i+=1
+
+      entryDict["ectimecreated"] = str(entry.timeCreated)
+      entryDict["eclatitude"] = str(entry.location.lat)
+      entryDict["eclongitude"] = str(entry.location.lon)
 
       i=0
       for fieldName in entry.longFieldNames:
@@ -627,16 +638,13 @@ class EntryHandler:
       #should consistently be returning/using either "ectimecreated" or "time" as defaults.
       
       title = formHandler.getTitle(form).lower()
-      subtitle = formHandler.getSubtitle(form).lower()
+   
       if title == "time": #NB: clean this up
         title = "ectimecreated"
-      if subtitle == "time":
-        subtitle = "ectimecreated"
-      
+        
       kml+=']]></description>\n'
       kml+='<name>'+entryDict[title]
-      if len(subtitle)>0 and subtitle!=title:
-        kml+=' (' + entryDict[subtitle] +')'
+      
       kml+='</name>\n'
       kml+='<Point>\n<coordinates>'+entryDict["eclongitude"]+','+entryDict["eclatitude"]+'</coordinates>\n</Point>\n'
       kml+='</Placemark>\n'

@@ -25,7 +25,7 @@ var grid;
 var imagePnl;
 
 var page = 1;
-var pageSize = 20;
+var pageSize = 250;
 
 function init(){
 	popup = new EcEntryWindow({
@@ -296,30 +296,45 @@ function init(){
 	function getEntries(number, offset)
 	{
 		Ext.get("loader").show();
+	
+		var ajax = Ext.Ajax; 
 		
-		var sortState = store.getSortState();
-		if(!sortState) sortState = {field : "ecTimeCreated", direction : "asc"} 
-		Ext.Ajax.request({
+		var st = store;
+		var sortState = st.getSortState();
+		if(!sortState) sortState = {field : "ecTimeCreated", direction : "asc"}
+		
+		
+		
+		ajax.request({
 			url:"getEntries?num=" + number + "&offset=" + offset + "&projectKey={{project.key}}&sortField=" + sortState.field  + "&sortDir=" + sortState.direction,
 			method:"GET",
 			success:function(res, opts){
 			try{
+				var Record = Ext.data.Record;
+				var g = grid;
+				var records = JSON.parse(res.responseText);
 				
-				var records = Ext.util.JSON.decode(res.responseText);
 				if(records.length == 0)
 				{
-					alert("You are already on the last page");
-					prevPage();
+					//alert("You are already on the last page");
+					//prevPage();
+					window.updater = setInterval(function(){ clearInterval(window.updater); getEntries(pageSize, st.getCount())}, 60000);
 					return;
 				}
 				
-				for(var i = 0; i < records.length; i++)
+				var len = records.length;
+				var newrecs = [];
+				
+				for(var i = len; i--;)
 				{
-					var rec = new Ext.data.Record(records[i]);
-					store.addSorted(rec);
+					var rec = new Record(records[i]);
+					newrecs.push(rec);
 				}
 				
-				grid.render();
+				st.add(newrecs);
+				st.sort(sortState.field, sortState.direction);
+				
+				g.render();
 				if(records.length == number) 
 				{
 					getEntries(number, offset + number);
