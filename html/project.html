@@ -17,15 +17,15 @@
 					 
 		<table width="100%">
 				<tr>
-						<td id="projectDescription" style="width:50%;vertical-align:middle;">{{projectDescription}}</td>
-						<td class="projectImage" style="width:50%;text-align:center;vertical-align:middle;">{{projectImage}}</td>
+						<td id="projectDescription" style="width:50%;vertical-align:middle;">{{projectDescription|safe}}</td>
+						<td class="projectImage" style="width:50%;text-align:center;vertical-align:middle;">{{projectImage|safe}}</td>
 				</tr>	
 		</table>
  
-		<table width="100%" border="0" cellspacing="0" cellpadding="0" id="dataView">{{userMenu}}</table>
+		<table width="100%" border="0" cellspacing="0" cellpadding="0" id="dataView">{{userMenu|safe}}</table>
 		<br />
-		<table width="100%" border="0" cellspacing="0" cellpadding="0" id="projectAdmin">{{adminMenu}}</table>
+		<table width="100%" border="0" cellspacing="0" cellpadding="0" id="projectAdmin">{{adminMenu|safe}}</table>
 		<br />
-		<p style="width:100%;text-align:center;vertical-align:bottom;"><span id="getFormLink">{{getFormLink}}</span><span id="login">{{loginLink}}</span></p> 
+		<p style="width:100%;text-align:center;vertical-align:bottom;"><span id="getFormLink">{{getFormLink|safe}}</span><span id="login">{{loginLink|safe}}</span></p> 
 		
 {% endblock %}

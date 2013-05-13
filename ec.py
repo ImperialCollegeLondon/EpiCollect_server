@@ -333,29 +333,29 @@ class EntryHandler:
       arg=thisArg.lower()
 
       try:
-        if arg=="ectimecreated":
+        if arg==u'ectimecreated':
           seconds=float(val)
           if seconds>1000000000000.0: # if we're dealing with milliseconds not seconds
             seconds=seconds/1000
           entry.timeCreated=datetime.utcfromtimestamp(seconds)
-        elif arg=="eclastedited":
+        elif arg==u'eclastedited':
           seconds=float(val)
           if seconds>1000000000000.0: # if we're dealing with milliseconds not seconds
             seconds=seconds/1000
           entry.lastEdited=datetime.utcfromtimestamp(seconds)
-        elif arg=="ecaltitude":
+        elif arg==u'ecaltitude':
           entry.altitude=float(val)
-        elif arg=="eclatitude":
+        elif arg==u'eclatitude':
           lat=float(val)
-        elif arg=="eclongitude":
+        elif arg==u'eclongitude':
           long=float(val)
-        elif arg=="ecentryid":
+        elif arg==u'ecentryid':
           entry.entryID=val
-        elif arg=="ecdeviceid":
+        elif arg==u'ecdeviceid':
           entry.deviceID=val
-        elif arg=="ecuseremail":
+        elif arg==u"ecuseremail":
           entry.userEmail=val
-        elif arg=="ecappname" or arg=="ecprojectname":
+        elif arg==u"ecappname" or arg==u"ecprojectname":
           entry.projectName=val
           q = db.GqlQuery("SELECT * FROM Project WHERE name = :1", val)
           projects = q.fetch(1)
@@ -387,9 +387,9 @@ class EntryHandler:
         elif arg=="ecphotopath":
           entry.photoPath=val
       except ValueError, reason:
-        logging.warn("Value error for field name "+thisArg+" value "+str(val)+" reason "+str(reason))
+        logging.warn("Value error for field name "+thisArg+" value " +unicode(val)+" reason "+str(reason))
       except db.BadValueError, reason:
-        logging.warn("Bad value error for field name "+thisArg+" value "+str(val)+" reason "+str(reason))
+        logging.warn("Bad value error for field name "+thisArg+" value "+unicode(val)+" reason "+str(reason))
 
     try:
       entry.location=db.GeoPt(lat,long)
@@ -483,7 +483,7 @@ class EntryHandler:
     if len(entries)==0:
       return None
     return self.getImageForEntry(entries[0])
-    
+      
   def getImageForEntry(self, entry):
     if entry.image is not None:
       return entry.image
@@ -528,19 +528,26 @@ class EntryHandler:
       if project.protected and form.user != users.get_current_user():
         self.response.out.write("[]")
         return;
-      entries = self.getSavedEntries(None, project.name, 200, offset)
-
+      #entries = self.getSavedEntries(None, project.name, 200, offset)
+      entries = db.GqlQuery("Select * FROM Entry WHERE projectName = '%s' LIMIT %s OFFSET %s" % (project.name, number, offset))
+      
     xml = '<EpiCollect>'
     j = 0;
-    while j < number: 
-      for entry in entries:
+    #while j < number: 
+    for entry in entries:
         
         xml+="<Record>"
         xml+="<id>"+entry.entryID+"</id>"
         xml+="<f_time>"+str(entry.timeCreated)+"</f_time>"
-        xml+="<timeMillis>"+repr((time.mktime(entry.timeCreated.timetuple()) * 1000) + (entry.timeCreated.microsecond / 1000))+"</timeMillis>"
+        if entry.timeCreated is not None:
+            xml+="<timeMillis>"+repr((time.mktime(entry.timeCreated.timetuple()) * 1000) + (entry.timeCreated.microsecond / 1000))+"</timeMillis>"
+        else:
+            xml+="<timeMillis>0</timeMillis>"
         xml+="<lastEdited>"+str(entry.lastEdited)+"</lastEdited>"
-        xml+="<lastEditedMillis>"+repr((time.mktime(entry.lastEdited.timetuple()) * 1000) + (entry.lastEdited.microsecond / 1000))+"</lastEditedMillis>"
+        if entry.timeCreated is not None:
+            xml+="<lastEditedMillis>"+repr((time.mktime(entry.lastEdited.timetuple()) * 1000) + (entry.lastEdited.microsecond / 1000))+"</lastEditedMillis>"
+        else:
+            xml+="<lastEditedMillis>0</lastEditedMillis>"
         xml+="<latitude>"+str(entry.location.lat)+"</latitude>"
         xml+="<longitude>"+str(entry.location.lon)+"</longitude>"
         xml+="<altitude>"+str(entry.altitude)+"</altitude>"
@@ -561,9 +568,9 @@ class EntryHandler:
         j += 1
         if j == number:
           break
-      entries = self.getSavedEntries(None, project.name, 200, offset + j)
-      if len(entries) == 0:
-        break
+      #entries = self.getSavedEntries(None, project.name, 200, offset + j)
+      #if len(entries) == 0:
+      #  break
     xml+="</EpiCollect>"
     return xml
 

@@ -72,7 +72,7 @@ pre {
 	#mainbox #leftfrontpage { width:700px;padding:0 30px 0 30px;border-right:1px solid #e5e9ef; }	
     
         
-#footer { width:1000px;background:url('footerbottom.gif') no-repeat bottom left #dce0e6;padding:0 0 18px 0;text-align:right; }
+#footer { width:1000px;background:#dce0e6;padding:0 0 18px 0;text-align:right; }
     
 #foot { text-align:right;width:998px;margin:15px 0 0 0;color:#aeb6c3;font-size:11px; }
     #foot a { color:#aeb6c3;font-size:11px;text-decoration:none; }

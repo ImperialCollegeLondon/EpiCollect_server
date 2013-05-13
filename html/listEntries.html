@@ -25,7 +25,7 @@ var grid;
 var imagePnl;
 
 var page = 1;
-var pageSize = 250;
+var pageSize = 40;
 
 function init(){
 	popup = new EcEntryWindow({
@@ -319,6 +319,7 @@ function init(){
 					//alert("You are already on the last page");
 					//prevPage();
 					window.updater = setInterval(function(){ clearInterval(window.updater); getEntries(pageSize, st.getCount())}, 60000);
+					Ext.get("loader").hide();	
 					return;
 				}
 				
@@ -335,6 +336,8 @@ function init(){
 				st.sort(sortState.field, sortState.direction);
 				
 				g.render();
+				
+				
 				if(records.length == number) 
 				{
 					getEntries(number, offset + number);
